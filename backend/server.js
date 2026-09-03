@@ -13,37 +13,42 @@ const logger           = require('./config/logger');
 const { initSocket }   = require('./services/socket.service');
 const errorHandler     = require('./middleware/errorHandler.middleware');
 
-// ── Passport GitHub strategy ──────────────────────────────────────────────────
+// ── Passport GitHub strategy (only if credentials are configured) ────────────
 const GitHubStrategy = require('passport-github2').Strategy;
 const User = require('./models/User');
 
-passport.use(new GitHubStrategy(
-  {
-    clientID:     process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL:  process.env.GITHUB_CALLBACK_URL,
-  },
-  async (accessToken, _refreshToken, profile, done) => {
-    try {
-      let user = await User.findOne({ githubId: profile.id });
-      if (!user) {
-        user = await User.create({
-          githubId:    profile.id,
-          username:    profile.username,
-          email:       profile.emails?.[0]?.value || `${profile.username}@github.local`,
-          avatar:      profile.photos?.[0]?.value,
-          accessToken,
-        });
-      } else {
-        user.accessToken = accessToken;
-        await user.save({ validateBeforeSave: false });
+if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+  passport.use(new GitHubStrategy(
+    {
+      clientID:     process.env.GITHUB_CLIENT_ID,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      callbackURL:  process.env.GITHUB_CALLBACK_URL,
+    },
+    async (accessToken, _refreshToken, profile, done) => {
+      try {
+        let user = await User.findOne({ githubId: profile.id });
+        if (!user) {
+          user = await User.create({
+            githubId:    profile.id,
+            username:    profile.username,
+            email:       profile.emails?.[0]?.value || `${profile.username}@github.local`,
+            avatar:      profile.photos?.[0]?.value,
+            accessToken,
+          });
+        } else {
+          user.accessToken = accessToken;
+          await user.save({ validateBeforeSave: false });
+        }
+        done(null, user);
+      } catch (err) {
+        done(err);
       }
-      done(null, user);
-    } catch (err) {
-      done(err);
     }
-  }
-));
+  ));
+  logger.info('GitHub OAuth strategy registered');
+} else {
+  logger.warn('GitHub OAuth disabled — set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable');
+}
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 const authRoutes        = require('./routes/auth.routes');

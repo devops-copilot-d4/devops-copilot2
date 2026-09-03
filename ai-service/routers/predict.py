@@ -35,6 +35,8 @@ class DeploymentFeatures(BaseModel):
 
 
 class PredictionResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     failure_probability: float
     risk_level: str
     model_version: str

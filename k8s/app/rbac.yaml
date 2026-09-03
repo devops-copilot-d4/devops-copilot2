@@ -1,0 +1,44 @@
+# ServiceAccount for the backend pod — allows it to call the K8s API
+# for self-healing (restart, rollback, scale) without using a kubeconfig file.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: devops-copilot-sa
+  namespace: devops-copilot
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: devops-copilot-role
+  namespace: devops-copilot
+rules:
+  # Deployments — needed for restart, rollback, scale, status
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale", "replicasets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # Pods — needed for log fetching and pod status
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  # Services — needed for deploying new services
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "create", "patch"]
+  # Namespaces — needed for listNamespaces()
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: devops-copilot-rolebinding
+  namespace: devops-copilot
+subjects:
+  - kind: ServiceAccount
+    name: devops-copilot-sa
+    namespace: devops-copilot
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: devops-copilot-role

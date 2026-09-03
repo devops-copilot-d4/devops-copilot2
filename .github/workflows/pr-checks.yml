@@ -1,0 +1,56 @@
+name: PR — Quality Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-build:
+    name: Lint, Build, Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Backend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm run lint --if-present
+        working-directory: backend
+
+      # Frontend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+        env:
+          VITE_API_URL: /api
+
+      # AI service
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+        working-directory: ai-service
+      - name: AI smoke test
+        working-directory: ai-service
+        run: |
+          python - <<'EOF'
+          from core.model_manager import ModelManager
+          m = ModelManager()
+          m.load_or_train()
+          r = m.predict({"build_duration": 300, "build_status": 1, "retry_count": 2})
+          assert 0 <= r["failure_probability"] <= 1
+          print(f"OK — {r}")
+          EOF

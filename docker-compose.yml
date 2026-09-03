@@ -1,0 +1,211 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DevOps Copilot — Full Stack Local Dev
+#
+# Services:
+#   mongo       — MongoDB 7
+#   backend     — Node.js + Express API       :5000
+#   ai-service  — Python FastAPI + XGBoost    :8000
+#   ollama      — Local LLM server (Llama 3)  :11434
+#   prometheus  — Metrics scraping            :9090
+#   grafana     — Dashboards                  :3001
+#   frontend    — React (Vite dev server)     :3000
+#
+# Usage:
+#   docker compose up -d              # start all
+#   docker compose up -d --build      # rebuild images first
+#   docker compose logs -f backend    # tail a single service
+#   docker compose down -v            # stop and remove volumes
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  copilot-net:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  ollama-data:
+  prometheus-data:
+  grafana-data:
+  ai-models:
+
+services:
+
+  # ── MongoDB ───────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7.0
+    container_name: copilot-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: devops-copilot
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - copilot-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Ollama (local LLM) ────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: copilot-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - copilot-net
+    # Pull models on first start — comment out if you prefer to pull manually
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 5
+        ollama pull llama3  || true
+        ollama pull gemma:7b || true
+        wait
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s   # models take time to download
+
+  # ── AI Microservice (XGBoost + FastAPI) ──────────────────────────────────
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: copilot-ai
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=info
+    volumes:
+      - ai-models:/app/models    # persist trained model between restarts
+    ports:
+      - "8000:8000"
+    networks:
+      - copilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Backend (Node.js) ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: copilot-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      MONGO_URI: mongodb://mongo:27017/devops-copilot
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production-min-32-chars}
+      JWT_EXPIRES_IN: 7d
+      CLIENT_URL: http://localhost:3000
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_RCA_MODEL: llama3
+      OLLAMA_PREDICT_MODEL: llama3
+      OLLAMA_EXPLAIN_MODEL: gemma:7b
+      OLLAMA_SLO_MODEL: llama3
+      AI_SERVICE_URL: http://ai-service:8000
+      PROMETHEUS_URL: http://prometheus:9090
+      IN_CLUSTER: "false"
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CALLBACK_URL: http://localhost:5000/api/auth/github/callback
+    ports:
+      - "5000:5000"
+    networks:
+      - copilot-net
+    volumes:
+      - ./backend/logs:/app/logs   # persist log files
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Frontend (Vite dev server) ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: copilot-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:5000/api
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src    # hot-reload: mount source
+    networks:
+      - copilot-net
+
+  # ── Prometheus ────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: copilot-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./k8s/prometheus/prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - copilot-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Grafana ───────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: copilot-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-devops2024}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./k8s/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - copilot-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5

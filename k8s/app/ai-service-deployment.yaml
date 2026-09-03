@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-copilot-ai
+  namespace: devops-copilot
+  labels:
+    app: devops-copilot-ai
+spec:
+  replicas: 1           # XGBoost inference is stateless but memory-hungry
+  selector:
+    matchLabels:
+      app: devops-copilot-ai
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: devops-copilot-ai
+    spec:
+      containers:
+        - name: ai-service
+          image: ghcr.io/YOUR_ORG/devops-copilot-ai:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"    # XGBoost + SHAP need headroom
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 40   # model training on cold start takes time
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: ai-models
+              mountPath: /app/models   # persist trained model across pod restarts
+      volumes:
+        - name: ai-models
+          persistentVolumeClaim:
+            claimName: ai-models-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-copilot-ai
+  namespace: devops-copilot
+spec:
+  selector:
+    app: devops-copilot-ai
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-models-pvc
+  namespace: devops-copilot
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

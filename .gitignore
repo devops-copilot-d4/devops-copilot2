@@ -1,0 +1,32 @@
+# Environment
+.env
+*.env.local
+
+# Node
+node_modules/
+backend/logs/
+frontend/dist/
+frontend/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+ai-service/models/xgb_model.json
+ai-service/models/model_meta.json
+
+# Build artifacts
+*.log
+*.tmp
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Kubernetes secrets (never commit real secrets)
+k8s/app/configmap-secrets.yaml
+
+# macOS
+.DS_Store

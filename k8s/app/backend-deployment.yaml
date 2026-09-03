@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-copilot-backend
+  namespace: devops-copilot
+  labels:
+    app: devops-copilot-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: devops-copilot-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: devops-copilot-backend
+    spec:
+      serviceAccountName: devops-copilot-sa
+      containers:
+        - name: backend
+          image: ghcr.io/YOUR_ORG/devops-copilot-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - secretRef:
+                name: copilot-secrets
+            - configMapRef:
+                name: copilot-config
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+      volumes:
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-copilot-backend
+  namespace: devops-copilot
+spec:
+  selector:
+    app: devops-copilot-backend
+  ports:
+    - port: 80
+      targetPort: 5000
+  type: ClusterIP

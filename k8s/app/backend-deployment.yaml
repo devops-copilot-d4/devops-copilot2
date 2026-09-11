@@ -23,6 +23,8 @@ spec:
       serviceAccountName: devops-copilot-sa
       containers:
         - name: backend
+          # Set your GitHub org/username before deploying:
+          #   sed -i 's|YOUR_ORG|<your-github-org>|g' k8s/app/*.yaml
           image: ghcr.io/YOUR_ORG/devops-copilot-backend:latest
           imagePullPolicy: Always
           ports:

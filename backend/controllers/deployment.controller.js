@@ -164,4 +164,34 @@ const getDeploymentStatus = async (req, res, next) => {
   }
 };
 
-module.exports = { triggerDeployment, getDeployments, getDeploymentStatus };
+// ─── Log ingestion — called by GitHub Actions CI ──────────────────────────────
+// POST /api/deployments/:id/logs
+// Body: { logs: string, buildStatus?: string, deployStatus?: string }
+const ingestLogs = async (req, res, next) => {
+  try {
+    const { logs, buildStatus, deployStatus } = req.body;
+
+    const deployment = await Deployment.findById(req.params.id);
+    if (!deployment) return res.status(404).json({ message: 'Deployment not found' });
+
+    if (logs !== undefined)         deployment.logs         = logs;
+    if (buildStatus !== undefined)  deployment.buildStatus  = buildStatus;
+    if (deployStatus !== undefined) deployment.deployStatus = deployStatus;
+
+    await deployment.save();
+
+    emitEvent('deployment:update', {
+      deploymentId:  deployment._id,
+      buildStatus:   deployment.buildStatus,
+      deployStatus:  deployment.deployStatus,
+      hasLogs:       !!deployment.logs,
+    });
+
+    logger.info(`[deployment] logs ingested for ${deployment._id} (${logs?.length ?? 0} chars)`);
+    res.json({ ok: true, deploymentId: deployment._id });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { triggerDeployment, getDeployments, getDeploymentStatus, ingestLogs };

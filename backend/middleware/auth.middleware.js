@@ -37,4 +37,31 @@ const adminOnly = (req, res, next) => {
   next();
 };
 
-module.exports = { protect, adminOnly };
+/**
+ * Restrict to one or more roles.
+ * Usage: authorize('admin', 'developer')
+ */
+const authorize = (...roles) => (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+  if (!roles.includes(req.user.role)) {
+    return res.status(403).json({
+      message: `Access denied — requires one of: ${roles.join(', ')}`,
+    });
+  }
+  next();
+};
+
+/**
+ * Viewer guard — blocks viewer role from write operations.
+ * Attach after protect on any mutating route.
+ */
+const noViewer = (req, res, next) => {
+  if (req.user?.role === 'viewer') {
+    return res.status(403).json({ message: 'Viewers cannot perform write operations' });
+  }
+  next();
+};
+
+module.exports = { protect, adminOnly, authorize, noViewer };

@@ -12,6 +12,8 @@ export default function Services() {
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState(null);
   const [liveSvc,  setLiveSvc]  = useState(null);
+  const [editing,  setEditing]  = useState(null);
+  const [saving,   setSaving]   = useState(false);
 
   const fetch_ = async () => {
     const { data } = await api.get('/services');
@@ -20,11 +22,25 @@ export default function Services() {
 
   const selectService = async (svc) => {
     setSelected(svc);
+    setEditing(null);
     setLiveSvc(null);
     try {
       const { data } = await api.get(`/services/${svc._id}`);
       setLiveSvc(data.liveStatus);
     } catch { /* k8s offline */ }
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const { data } = await api.patch(`/services/${editing._id}`, editing);
+      setSelected(data);
+      setEditing(null);
+      await fetch_();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Save failed');
+    } finally { setSaving(false); }
   };
 
   useEffect(() => { fetch_(); }, []);
@@ -120,11 +136,50 @@ export default function Services() {
         <div className="lg:col-span-3">
           {selected ? (
             <div className="card space-y-4">
-              <div>
-                <div className="font-semibold text-white text-lg">{selected.name}</div>
-                <div className="text-xs text-gray-500 font-mono">{selected.repoUrl}</div>
-                {selected.description && <div className="text-sm text-gray-400 mt-1">{selected.description}</div>}
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-semibold text-white text-lg">{selected.name}</div>
+                  <div className="text-xs text-gray-500 font-mono">{selected.repoUrl}</div>
+                  {selected.description && <div className="text-sm text-gray-400 mt-1">{selected.description}</div>}
+                </div>
+                <button
+                  onClick={() => setEditing({ ...selected })}
+                  className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Edit
+                </button>
               </div>
+
+              {/* Edit form */}
+              {editing && (
+                <form onSubmit={saveEdit} className="bg-gray-800 rounded-lg p-4 space-y-3">
+                  <div className="text-xs font-semibold text-gray-300 mb-2">Edit Service</div>
+                  {[
+                    { key: 'name',           label: 'Service Name' },
+                    { key: 'deploymentName', label: 'K8s Deployment Name' },
+                    { key: 'imageName',      label: 'Docker Image (name:tag)' },
+                    { key: 'namespace',      label: 'K8s Namespace' },
+                    { key: 'description',    label: 'Description' },
+                  ].map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="text-xs text-gray-400 block mb-1">{label}</label>
+                      <input
+                        value={editing[key] || ''}
+                        onChange={e => setEditing(prev => ({ ...prev, [key]: e.target.value }))}
+                        className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500"
+                      />
+                    </div>
+                  ))}
+                  <div className="flex gap-2 pt-1">
+                    <button type="submit" disabled={saving} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button type="button" onClick={() => setEditing(null)} className="bg-gray-700 text-gray-300 text-sm px-4 py-2 rounded-lg hover:bg-gray-600">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
 
               <div className="grid grid-cols-2 gap-3 text-sm">
                 {[

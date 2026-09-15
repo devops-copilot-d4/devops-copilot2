@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "lint": "eslint . --ext .js"
+    "lint": "npx eslint . --ext .js"
   },
   "dependencies": {
     "@kubernetes/client-node": "^0.21.0",

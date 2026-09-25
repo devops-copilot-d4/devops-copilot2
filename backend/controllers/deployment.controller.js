@@ -110,13 +110,15 @@ const triggerDeployment = async (req, res, next) => {
 
     emitEvent('deployment:update', { deploymentId: deployment._id, buildStatus: 'queued', deployStatus: 'pending', deployment });
 
-    const user     = await User.findById(req.user.id).select('+accessToken');
+    // Use PAT from env first, fall back to user's OAuth token
+    const ghToken  = process.env.GITHUB_ACCESS_TOKEN ||
+                     (await User.findById(req.user.id).select('+accessToken'))?.accessToken;
     const repoInfo = parseRepoUrl(service.repoUrl);
 
-    if (user?.accessToken && repoInfo) {
+    if (ghToken && repoInfo) {
       const triggeredAt = new Date();
-      triggerWorkflowDispatch(user.accessToken, repoInfo.owner, repoInfo.repo)
-        .then(() => pollWorkflowStatus(deployment._id, user.accessToken, repoInfo.owner, repoInfo.repo, triggeredAt))
+      triggerWorkflowDispatch(ghToken, repoInfo.owner, repoInfo.repo)
+        .then(() => pollWorkflowStatus(deployment._id, ghToken, repoInfo.owner, repoInfo.repo, triggeredAt))
         .catch(err => logger.error(`[deployment] workflow_dispatch failed: ${err.message}`));
     }
 

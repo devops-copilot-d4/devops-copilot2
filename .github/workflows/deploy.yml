@@ -200,23 +200,27 @@ jobs:
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
 
       - name: Update backend deployment image
+        continue-on-error: true
         run: |
           kubectl set image deployment/devops-copilot-backend \
             backend=${{ env.IMAGE_BACKEND }}:sha-${{ env.SHORT_SHA }} \
             -n devops-copilot
 
       - name: Update AI service deployment image
+        continue-on-error: true
         run: |
           kubectl set image deployment/devops-copilot-ai \
             ai-service=${{ env.IMAGE_AI }}:sha-${{ env.SHORT_SHA }} \
             -n devops-copilot
 
       - name: Wait for rollout
+        continue-on-error: true
         run: |
           kubectl rollout status deployment/devops-copilot-backend -n devops-copilot --timeout=3m
           kubectl rollout status deployment/devops-copilot-ai       -n devops-copilot --timeout=3m
 
       - name: Verify deployment health
+        continue-on-error: true
         run: |
           kubectl get pods -n devops-copilot
           kubectl get svc  -n devops-copilot

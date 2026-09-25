@@ -44,7 +44,7 @@ const login = async (req, res, next) => {
 // Called after GitHub OAuth completes (passport callback)
 const githubCallback = (req, res) => {
   const token = signToken(req.user._id);
-  res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  res.redirect(`${process.env.CLIENT_URL}/login?token=${token}`);
 };
 
 const getMe = async (req, res) => {
